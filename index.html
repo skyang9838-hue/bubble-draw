@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>물방울 뽑기</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+  :root {
+    --ink: #1d2a44;
+    --sub: #5b6b88;
+    --sky1: #d9f0ff;
+    --sky2: #eef0ff;
+    --sky3: #fbe9f6;
+    --blue: #3b82f6;
+    --blue2: #6366f1;
+    --card: rgba(255,255,255,.72);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: Pretendard, "Malgun Gothic", system-ui, sans-serif;
+    color: var(--ink);
+    background: linear-gradient(160deg, var(--sky1) 0%, var(--sky2) 55%, var(--sky3) 100%);
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* 물방울 무대 */
+  #stage { position: fixed; inset: 0; }
+  .bubble {
+    position: absolute; left: 0; top: 0;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 30% 28%, rgba(255,255,255,.95) 0 9%, rgba(255,255,255,0) 10%),
+      radial-gradient(circle at 68% 74%, rgba(255,255,255,.55) 0 4%, rgba(255,255,255,0) 5%),
+      radial-gradient(circle at 50% 50%, rgba(255,255,255,.08) 55%, rgba(170,210,255,.45) 72%, rgba(210,170,255,.55) 86%, rgba(255,255,255,.85) 100%);
+    box-shadow: inset 0 0 18px rgba(255,255,255,.6), 0 6px 22px rgba(80,120,200,.12);
+    will-change: transform;
+  }
+  .bubble.chosen {
+    transition: transform .9s cubic-bezier(.2,.8,.2,1);
+    z-index: 5;
+  }
+  .bubble.wobble { animation: wobble .5s ease-in-out infinite; }
+  @keyframes wobble {
+    0%,100% { border-radius: 50%; }
+    25% { border-radius: 46% 54% 52% 48% / 54% 46% 54% 46%; }
+    75% { border-radius: 54% 46% 48% 52% / 46% 54% 46% 54%; }
+  }
+  .drop {
+    position: absolute; width: 14px; height: 14px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #fff, #a5c8ff 70%);
+    pointer-events: none; z-index: 6;
+  }
+
+  /* 위 제목 */
+  header {
+    position: fixed; top: 28px; left: 0; right: 0;
+    text-align: center; pointer-events: none; z-index: 3;
+  }
+  header h1 {
+    margin: 0; font-size: clamp(28px, 4vw, 48px); font-weight: 800; letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+  header h1 span { color: var(--blue); }
+
+  /* 뽑기 버튼 */
+  #drawBtn {
+    position: fixed; left: 50%; bottom: 120px; transform: translateX(-50%);
+    z-index: 4;
+    font: inherit; font-size: clamp(26px, 3.2vw, 38px); font-weight: 800;
+    color: #fff; border: 0; cursor: pointer;
+    padding: 22px 64px; border-radius: 999px;
+    background: linear-gradient(135deg, var(--blue), var(--blue2));
+    box-shadow: 0 12px 30px rgba(79,70,229,.35), inset 0 2px 0 rgba(255,255,255,.35);
+    transition: transform .15s, box-shadow .15s, opacity .2s;
+  }
+  #drawBtn:hover { transform: translateX(-50%) translateY(-2px); box-shadow: 0 16px 36px rgba(79,70,229,.42), inset 0 2px 0 rgba(255,255,255,.35); }
+  #drawBtn:active { transform: translateX(-50%) scale(.97); }
+  #drawBtn:disabled { opacity: .45; cursor: default; }
+
+  /* 뽑힌 순서 */
+  #history {
+    position: fixed; left: 0; right: 0; bottom: 26px; z-index: 3;
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
+    padding: 0 90px; max-height: 76px; overflow: hidden;
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px 6px 6px; border-radius: 999px;
+    background: var(--card); backdrop-filter: blur(6px);
+    font-size: 18px; font-weight: 600;
+    box-shadow: 0 2px 8px rgba(60,80,140,.08);
+    animation: chipIn .35s ease-out;
+  }
+  .chip b {
+    display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+    background: #e3ecff; color: var(--blue); font-size: 14px;
+  }
+  @keyframes chipIn { from { opacity: 0; transform: translateY(8px); } }
+
+  /* 이름 공개 */
+  #reveal {
+    position: fixed; inset: 0; z-index: 10;
+    display: grid; place-items: center;
+    background: rgba(230,240,255,.35); backdrop-filter: blur(3px);
+    opacity: 0; pointer-events: none; transition: opacity .25s;
+  }
+  #reveal.show { opacity: 1; pointer-events: auto; cursor: pointer; }
+  #reveal .card {
+    text-align: center; padding: 48px 80px 40px; border-radius: 36px;
+    background: rgba(255,255,255,.9);
+    box-shadow: 0 30px 80px rgba(60,80,160,.25);
+    transform: scale(.6); transition: transform .45s cubic-bezier(.2,1.4,.4,1);
+  }
+  #reveal.show .card { transform: scale(1); }
+  #reveal .order { font-size: 22px; font-weight: 700; color: var(--sub); }
+  #reveal .name {
+    font-size: clamp(80px, 13vw, 180px); font-weight: 900; letter-spacing: -0.03em; line-height: 1.1;
+    background: linear-gradient(135deg, #2563eb, #7c3aed 60%, #db2777);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    margin: 6px 0 10px;
+  }
+  #reveal .hint { font-size: 16px; color: var(--sub); }
+
+  /* 안내 (명단 없을 때) */
+  #empty {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    z-index: 4; text-align: center; display: none;
+    background: var(--card); backdrop-filter: blur(8px);
+    padding: 32px 40px; border-radius: 24px; box-shadow: 0 10px 40px rgba(60,80,160,.15);
+  }
+  #empty p { margin: 0 0 18px; font-size: 20px; line-height: 1.6; }
+  #empty button { font: inherit; font-size: 18px; font-weight: 700; padding: 12px 28px; border-radius: 999px; border: 0; background: var(--blue); color: #fff; cursor: pointer; }
+
+  /* 선생님 몰래 버튼: 오른쪽 아래 1초 꾹 */
+  #secret {
+    position: fixed; right: 0; bottom: 0; width: 70px; height: 70px; z-index: 20;
+  }
+  #secret::after {
+    content: ""; position: absolute; right: 14px; bottom: 14px; width: 0; height: 0; border-radius: 50%;
+    background: rgba(59,130,246,.25); transition: width 1s linear, height 1s linear;
+  }
+  #secret.holding::after { width: 40px; height: 40px; }
+
+  /* 선생님 화면 */
+  #panel {
+    position: fixed; inset: 0; z-index: 30; display: none;
+    background: rgba(20,30,60,.35); backdrop-filter: blur(4px);
+  }
+  #panel.show { display: grid; place-items: center; }
+  .sheet {
+    width: min(960px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: auto;
+    background: #fff; border-radius: 24px; padding: 28px 32px;
+    box-shadow: 0 30px 80px rgba(0,0,0,.25);
+    user-select: text; -webkit-user-select: text;
+  }
+  .sheet h2 { margin: 0 0 4px; font-size: 26px; }
+  .sheet .lead { margin: 0 0 20px; color: var(--sub); font-size: 15px; }
+  .sheet h3 { margin: 22px 0 8px; font-size: 18px; }
+  .sheet textarea {
+    width: 100%; height: 110px; font: inherit; font-size: 16px; padding: 12px 14px;
+    border: 1.5px solid #d6deef; border-radius: 14px; resize: vertical;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+  .btn {
+    font: inherit; font-size: 15px; font-weight: 700; padding: 9px 18px; border-radius: 999px;
+    border: 1.5px solid #d6deef; background: #fff; color: var(--ink); cursor: pointer;
+  }
+  .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .btn.danger { color: #dc2626; border-color: #f3c4c4; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 14px; color: var(--sub); margin-bottom: 10px; }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 4px; margin-right: 4px; vertical-align: -1px; }
+  #roster { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+  .stu {
+    font: inherit; font-size: 16px; font-weight: 700; padding: 12px 8px; border-radius: 14px; cursor: pointer;
+    border: 2px solid #e2e8f5; background: #f8faff; color: var(--ink); position: relative;
+  }
+  .stu.must { border-color: #f59e0b; background: #fff7e6; }
+  .stu.must::before { content: "★"; color: #f59e0b; margin-right: 4px; }
+  .stu.out { border-color: #e5e7eb; background: #f3f4f6; color: #9ca3af; text-decoration: line-through; }
+  .stu.done::after {
+    content: "뽑힘"; position: absolute; top: -8px; right: -6px; font-size: 11px; padding: 2px 6px;
+    border-radius: 999px; background: var(--blue); color: #fff; text-decoration: none;
+  }
+  .stats { font-size: 14px; color: var(--sub); margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<div id="stage"></div>
+
+<header><h1>오늘의 <span>물방울</span>은 누구?</h1></header>
+
+<div id="empty">
+  <p>아직 명단이 없어요.<br>선생님 화면에서 이름을 넣어 주세요.</p>
+  <button id="emptyOpen">명단 넣기</button>
+</div>
+
+<button id="drawBtn">뽑기</button>
+<div id="history"></div>
+
+<div id="reveal">
+  <div class="card">
+    <div class="order" id="revOrder"></div>
+    <div class="name" id="revName"></div>
+    <div class="hint">아무 곳이나 누르면 닫혀요</div>
+  </div>
+</div>
+
+<div id="secret" title=""></div>
+
+<div id="panel">
+  <div class="sheet">
+    <h2>선생님 화면</h2>
+    <p class="lead">아이들 앞 화면에 띄우기 전에 정해 두세요. 이 창은 오른쪽 아래를 1초 꾹 누르거나 <b>Ctrl+Shift+S</b>로 열려요. 닫기는 Esc.</p>
+
+    <h3>1. 명단</h3>
+    <textarea id="names" placeholder="이름을 한 줄에 하나씩 (쉼표나 띄어쓰기로 구분해도 돼요)"></textarea>
+    <div class="row">
+      <button class="btn primary" id="applyNames">명단 적용</button>
+      <span class="stats">같은 이름이면 정해 둔 상태(빼기·꼭)는 그대로 남아요.</span>
+    </div>
+
+    <h3>2. 누르면 상태가 바뀌어요</h3>
+    <div class="legend">
+      <span><i style="background:#f8faff;border:2px solid #e2e8f5"></i>보통 (무작위)</span>
+      <span><i style="background:#fff7e6;border:2px solid #f59e0b"></i>★ 꼭 뽑기 (먼저 나옴)</span>
+      <span><i style="background:#f3f4f6;border:2px solid #e5e7eb"></i>몰래 빼기 (절대 안 나옴)</span>
+    </div>
+    <div id="roster"></div>
+    <div class="stats" id="stats"></div>
+
+    <h3>3. 뽑기</h3>
+    <div class="row">
+      <button class="btn" id="undo">방금 뽑은 것 취소</button>
+      <button class="btn danger" id="resetDraw">처음부터 다시 뽑기</button>
+      <button class="btn" id="resetModes">빼기·꼭 모두 풀기</button>
+      <button class="btn" id="soundBtn"></button>
+    </div>
+
+    <div class="row" style="margin-top:24px; justify-content:flex-end">
+      <button class="btn primary" id="closePanel">닫기</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const KEY = 'bubble-draw-v1';
+  const $ = (id) => document.getElementById(id);
+
+  // ---------- 저장 ----------
+  let state = { students: [], drawn: [], sound: true };
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (saved && Array.isArray(saved.students)) state = Object.assign(state, saved);
+  } catch (e) {}
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
+
+  // ---------- 무작위 ----------
+  const rand = (n) => {
+    const a = new Uint32Array(1);
+    crypto.getRandomValues(a);
+    return a[0] % n;
+  };
+  const pickOne = (arr) => arr[rand(arr.length)];
+
+  function pool() {
+    return state.students.filter(s => s.mode !== 'out' && !state.drawn.includes(s.name));
+  }
+  function nextName() {
+    const p = pool();
+    if (!p.length) return null;
+    const must = p.filter(s => s.mode === 'must');
+    return pickOne(must.length ? must : p).name;
+  }
+
+  // ---------- 소리 ----------
+  let actx = null;
+  function pop() {
+    if (!state.sound) return;
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      const t = actx.currentTime;
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(900, t);
+      o.frequency.exponentialRampToValueAtTime(180, t + 0.12);
+      g.gain.setValueAtTime(0.35, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+      o.connect(g).connect(actx.destination);
+      o.start(t); o.stop(t + 0.16);
+      [0, 0.09, 0.18].forEach((d, i) => {
+        const o2 = actx.createOscillator(), g2 = actx.createGain();
+        o2.type = 'triangle';
+        o2.frequency.value = [784, 988, 1319][i];
+        g2.gain.setValueAtTime(0.0001, t + 0.15 + d);
+        g2.gain.exponentialRampToValueAtTime(0.18, t + 0.17 + d);
+        g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.45 + d);
+        o2.connect(g2).connect(actx.destination);
+        o2.start(t + 0.15 + d); o2.stop(t + 0.5 + d);
+      });
+    } catch (e) {}
+  }
+
+  // ---------- 물방울 (개수는 인원과 상관없음) ----------
+  const stage = $('stage');
+  const BUBBLES = 16;
+  const bubbles = [];
+  const W = () => window.innerWidth, H = () => window.innerHeight;
+
+  function makeBubble(fromBottom) {
+    const el = document.createElement('div');
+    el.className = 'bubble';
+    const r = 50 + Math.random() * 70;
+    el.style.width = el.style.height = (r * 2) + 'px';
+    stage.appendChild(el);
+    const b = {
+      el, r,
+      x: Math.random() * (W() - 2 * r),
+      y: fromBottom ? H() + Math.random() * 100 : Math.random() * (H() - 2 * r),
+      vx: (Math.random() - 0.5) * 0.6,
+      vy: -(0.2 + Math.random() * 0.45),
+      ph: Math.random() * Math.PI * 2,
+      busy: false,
+    };
+    bubbles.push(b);
+    return b;
+  }
+  for (let i = 0; i < BUBBLES; i++) makeBubble(false);
+
+  function tick(t) {
+    for (const b of bubbles) {
+      if (b.busy) continue;
+      b.x += b.vx + Math.sin(t / 1400 + b.ph) * 0.35;
+      b.y += b.vy;
+      if (b.x < -b.r) b.x = W() - b.r;
+      if (b.x > W() - b.r) b.x = -b.r;
+      if (b.y < -2 * b.r - 20) { b.y = H() + 20; b.x = Math.random() * (W() - 2 * b.r); }
+      const s = 1 + Math.sin(t / 900 + b.ph) * 0.03;
+      b.el.style.transform = `translate(${b.x}px, ${b.y}px) scale(${s})`;
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  function burst(cx, cy) {
+    for (let i = 0; i < 18; i++) {
+      const d = document.createElement('div');
+      d.className = 'drop';
+      stage.appendChild(d);
+      const ang = (i / 18) * Math.PI * 2 + Math.random() * 0.3;
+      const dist = 140 + Math.random() * 120;
+      const size = 8 + Math.random() * 12;
+      d.style.width = d.style.height = size + 'px';
+      d.animate([
+        { transform: `translate(${cx}px, ${cy}px) scale(1)`, opacity: 1 },
+        { transform: `translate(${cx + Math.cos(ang) * dist}px, ${cy + Math.sin(ang) * dist}px) scale(.3)`, opacity: 0 },
+      ], { duration: 650 + Math.random() * 250, easing: 'cubic-bezier(.1,.7,.3,1)' }).onfinish = () => d.remove();
+    }
+  }
+
+  // ---------- 뽑기 ----------
+  let drawing = false;
+  function draw() {
+    if (drawing || $('panel').classList.contains('show')) return;
+    const name = nextName();
+    if (!name) return;
+    drawing = true;
+    $('drawBtn').disabled = true;
+
+    // 화면 가운데에 가까운 물방울 하나
+    const cx = W() / 2, cy = H() / 2;
+    let best = null, bd = Infinity;
+    for (const b of bubbles) {
+      if (b.busy) continue;
+      const d = Math.hypot(b.x + b.r - cx, b.y + b.r - cy);
+      if (d < bd && b.y < H() - 2 * b.r && b.y > 0) { bd = d; best = b; }
+    }
+    best = best || bubbles.find(b => !b.busy);
+    best.busy = true;
+    const el = best.el;
+    el.classList.add('chosen');
+    const scale = 220 / best.r;
+    requestAnimationFrame(() => {
+      el.style.transform = `translate(${cx - best.r}px, ${cy - best.r}px) scale(${scale})`;
+    });
+    setTimeout(() => el.classList.add('wobble'), 900);
+    setTimeout(() => {
+      el.classList.remove('wobble', 'chosen');
+      el.remove();
+      bubbles.splice(bubbles.indexOf(best), 1);
+      burst(cx, cy);
+      pop();
+      state.drawn.push(name);
+      save();
+      showReveal(name, state.drawn.length);
+      renderHistory();
+      setTimeout(() => makeBubble(true), 400);
+    }, 1900);
+  }
+
+  function showReveal(name, order) {
+    $('revOrder').textContent = order + '번째';
+    $('revName').textContent = name;
+    $('reveal').classList.add('show');
+  }
+  function closeReveal() {
+    if (!$('reveal').classList.contains('show')) return;
+    $('reveal').classList.remove('show');
+    drawing = false;
+    refreshMain();
+  }
+  $('reveal').addEventListener('click', closeReveal);
+
+  function renderHistory() {
+    const h = $('history');
+    h.innerHTML = '';
+    state.drawn.forEach((n, i) => {
+      const c = document.createElement('span');
+      c.className = 'chip';
+      c.innerHTML = `<b>${i + 1}</b>`;
+      c.appendChild(document.createTextNode(n));
+      h.appendChild(c);
+    });
+  }
+
+  function refreshMain() {
+    const hasList = state.students.length > 0;
+    $('empty').style.display = hasList ? 'none' : 'block';
+    const left = pool().length;
+    const btn = $('drawBtn');
+    btn.style.display = hasList ? '' : 'none';
+    btn.disabled = drawing || left === 0;
+    btn.textContent = left === 0 ? '다 뽑았어요' : '뽑기';
+  }
+
+  $('drawBtn').addEventListener('click', draw);
+
+  // ---------- 선생님 화면 ----------
+  function openPanel() {
+    closeReveal();
+    $('names').value = state.students.map(s => s.name).join('\n');
+    renderRoster();
+    $('panel').classList.add('show');
+  }
+  function closePanel() {
+    $('panel').classList.remove('show');
+    refreshMain();
+    renderHistory();
+  }
+
+  function renderRoster() {
+    const box = $('roster');
+    box.innerHTML = '';
+    state.students.forEach(s => {
+      const b = document.createElement('button');
+      b.className = 'stu' + (s.mode !== 'normal' ? ' ' + s.mode : '') + (state.drawn.includes(s.name) ? ' done' : '');
+      b.textContent = s.name;
+      b.addEventListener('click', () => {
+        s.mode = s.mode === 'normal' ? 'must' : s.mode === 'must' ? 'out' : 'normal';
+        save();
+        renderRoster();
+      });
+      box.appendChild(b);
+    });
+    const must = state.students.filter(s => s.mode === 'must').length;
+    const out = state.students.filter(s => s.mode === 'out').length;
+    $('stats').textContent = state.students.length
+      ? `전체 ${state.students.length}명 · 꼭 ${must}명 · 빼기 ${out}명 · 이미 뽑힘 ${state.drawn.length}명 · 남은 ${pool().length}명`
+      : '';
+    $('soundBtn').textContent = state.sound ? '효과음 켜짐' : '효과음 꺼짐';
+  }
+
+  $('applyNames').addEventListener('click', () => {
+    const raw = $('names').value.split(/[\n,\t]+|\s{2,}/).map(s => s.trim()).filter(Boolean);
+    let list = raw;
+    // 한 줄에 띄어쓰기로만 적은 경우
+    if (raw.length === 1 && raw[0].includes(' ')) list = raw[0].split(/\s+/);
+    const seen = new Set();
+    const old = new Map(state.students.map(s => [s.name, s.mode]));
+    state.students = list.filter(n => !seen.has(n) && seen.add(n)).map(n => ({ name: n, mode: old.get(n) || 'normal' }));
+    state.drawn = state.drawn.filter(n => seen.has(n));
+    save();
+    renderRoster();
+  });
+  $('undo').addEventListener('click', () => { state.drawn.pop(); save(); renderRoster(); renderHistory(); });
+  $('resetDraw').addEventListener('click', () => { state.drawn = []; save(); renderRoster(); renderHistory(); });
+  $('resetModes').addEventListener('click', () => { state.students.forEach(s => s.mode = 'normal'); save(); renderRoster(); });
+  $('soundBtn').addEventListener('click', () => { state.sound = !state.sound; save(); renderRoster(); });
+  $('closePanel').addEventListener('click', closePanel);
+  $('emptyOpen').addEventListener('click', openPanel);
+  $('panel').addEventListener('click', (e) => { if (e.target === $('panel')) closePanel(); });
+
+  // 오른쪽 아래 1초 꾹
+  const secret = $('secret');
+  let holdTimer = null;
+  const startHold = (e) => {
+    e.preventDefault();
+    secret.classList.add('holding');
+    holdTimer = setTimeout(() => { secret.classList.remove('holding'); openPanel(); }, 1000);
+  };
+  const endHold = () => { clearTimeout(holdTimer); secret.classList.remove('holding'); };
+  secret.addEventListener('pointerdown', startHold);
+  secret.addEventListener('pointerup', endHold);
+  secret.addEventListener('pointerleave', endHold);
+  secret.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  document.addEventListener('keydown', (e) => {
+    const panelOpen = $('panel').classList.contains('show');
+    if (e.ctrlKey && e.shiftKey && (e.key === 'S' || e.key === 's')) { e.preventDefault(); panelOpen ? closePanel() : openPanel(); return; }
+    if (e.key === 'Escape') { panelOpen ? closePanel() : closeReveal(); return; }
+    if (panelOpen) return;
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      if ($('reveal').classList.contains('show')) closeReveal(); else draw();
+    }
+  });
+
+  renderHistory();
+  refreshMain();
+})();
+</script>
+</body>
+</html>
